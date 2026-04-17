@@ -1,0 +1,5 @@
+.env
+subscriptions.json
+/bot_image
+__pycache__/
+*.pyc

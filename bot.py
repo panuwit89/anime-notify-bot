@@ -1,3 +1,4 @@
+from IPython import embed
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -5,12 +6,14 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import os
 from dotenv import load_dotenv
 import asyncio
+import datetime
 
 from database import (
     subscribe, unsubscribe, get_subscriptions,
-    update_last_episode, get_guild_subscriptions
+    update_last_episode, get_guild_subscriptions,
+    set_offset, get_offset
 )
-from anime_checker import search_anime, get_latest_episode, get_airing_episodes, get_seasonal_anime, get_episode_list
+from anime_checker import search_anime, get_latest_episode, get_airing_episodes, get_seasonal_anime, get_episode_list, get_anime_by_id
 
 load_dotenv()
 
@@ -21,12 +24,52 @@ scheduler = AsyncIOScheduler()
 # ==================== COMMANDS ====================
 
 @bot.tree.command(name="subscribe", description="ติดตามอนิเมะเพื่อรับแจ้งเตือนตอนใหม่")
-@app_commands.describe(query="ชื่ออนิเมะที่ต้องการติดตาม")
-async def cmd_subscribe(interaction: discord.Interaction, query: str):
+@app_commands.describe(
+    query="ชื่ออนิเมะที่ต้องการติดตาม",
+    anime_id="ID ของอนิเมะ"
+)
+async def cmd_subscribe(interaction: discord.Interaction, query: str = None, anime_id: int = None):
     await interaction.response.defer()
 
+    # ถ้ามี anime_id ให้ sub เลยโดยไม่ต้อง search
+    if anime_id:
+        anime = await get_anime_by_id(anime_id)
+        if not anime:
+            await interaction.followup.send("❌ ไม่พบอนิเมะจาก ID ที่ระบุ")
+            return
+
+        title = anime.get("title", {}).get("romaji", "Unknown")
+        ep_num, ep_title = await get_airing_episodes(anime_id)
+        
+        subscribe(
+            str(interaction.guild_id),
+            str(interaction.channel_id),
+            anime_id,
+            title
+        )
+        
+        if ep_num:
+            update_last_episode(str(interaction.guild_id), anime_id, ep_num)
+
+        embed = discord.Embed(
+            title="✅ ติดตามสำเร็จ!",
+            description=f"จะแจ้งเตือนเมื่อ **{title}** มีตอนใหม่ในช่อง <#{interaction.channel_id}>",
+            color=discord.Color.green()
+        )
+        
+        if anime.get("coverImage", {}).get("large"):
+            embed.set_thumbnail(url=anime["coverImage"]["large"])
+
+        await interaction.followup.send(embed=embed)
+        return
+
+    # ถ้าไม่มี anime_id ต้องมี query
+    if not query:
+        await interaction.followup.send("❌ กรุณาระบุชื่ออนิเมะ หรือ ID อย่างใดอย่างหนึ่ง")
+        return
+
     results = await search_anime(query)
-    
+
     if not results:
         await interaction.followup.send("❌ ไม่พบอนิเมะที่ค้นหา ลองใช้ชื่อภาษาอังกฤษดูนะครับ")
         return
@@ -34,13 +77,14 @@ async def cmd_subscribe(interaction: discord.Interaction, query: str):
     # สร้าง dropdown ให้เลือก
     options = []
     for anime in results[:5]:
-        title = anime.get("title", "Unknown")
-        anime_id = anime.get("mal_id")
+        title = anime.get("title", {}).get("romaji", "Unknown")
+        aid = anime.get("id")
         ep = anime.get("episodes", "?")
         status = anime.get("status", "")
+        
         options.append(discord.SelectOption(
             label=title[:100],
-            value=str(anime_id),
+            value=str(aid),
             description=f"ตอน: {ep} | {status}"[:100]
         ))
 
@@ -49,28 +93,30 @@ async def cmd_subscribe(interaction: discord.Interaction, query: str):
             super().__init__(placeholder="เลือกอนิเมะ...", options=options)
 
         async def callback(self, select_interaction: discord.Interaction):
-            anime_id = int(self.values[0])
-            selected = next((a for a in results if a["mal_id"] == anime_id), None)
-            title = selected["title"] if selected else "Unknown"
+            selected_id = int(self.values[0])
+            selected = next((a for a in results if a["id"] == selected_id), None)
+            title = selected["title"]["romaji"] if selected else "Unknown"
 
-            # ดึง episode ล่าสุดเพื่อ set baseline
-            ep_num, ep_title = await get_airing_episodes(anime_id)
+            ep_num, ep_title = await get_airing_episodes(selected_id)
+            
             subscribe(
                 str(interaction.guild_id),
                 str(interaction.channel_id),
-                anime_id,
+                selected_id,
                 title
             )
+            
             if ep_num:
-                update_last_episode(str(interaction.guild_id), anime_id, ep_num)
+                update_last_episode(str(interaction.guild_id), selected_id, ep_num)
 
             embed = discord.Embed(
                 title="✅ ติดตามสำเร็จ!",
                 description=f"จะแจ้งเตือนเมื่อ **{title}** มีตอนใหม่ในช่อง <#{interaction.channel_id}>",
                 color=discord.Color.green()
             )
-            if selected and selected.get("images", {}).get("jpg", {}).get("image_url"):
-                embed.set_thumbnail(url=selected["images"]["jpg"]["image_url"])
+            
+            if selected and selected.get("coverImage", {}).get("large"):
+                embed.set_thumbnail(url=selected["coverImage"]["large"])
 
             await select_interaction.response.edit_message(content=None, embed=embed, view=None)
 
@@ -78,11 +124,11 @@ async def cmd_subscribe(interaction: discord.Interaction, query: str):
     view.add_item(AnimeSelect())
     await interaction.followup.send("🔍 พบอนิเมะต่อไปนี้ เลือกที่ต้องการติดตาม:", view=view)
 
-
 @bot.tree.command(name="unsubscribe", description="ยกเลิกการติดตามอนิเมะ")
 @app_commands.describe(anime_id="Anime ID (จาก /list)")
 async def cmd_unsubscribe(interaction: discord.Interaction, anime_id: int):
     success = unsubscribe(str(interaction.guild_id), anime_id)
+    
     if success:
         await interaction.response.send_message(f"✅ ยกเลิกการติดตาม Anime ID `{anime_id}` แล้ว")
     else:
@@ -91,31 +137,53 @@ async def cmd_unsubscribe(interaction: discord.Interaction, anime_id: int):
 
 @bot.tree.command(name="list", description="ดูรายการอนิเมะที่ติดตามอยู่")
 async def cmd_list(interaction: discord.Interaction):
+    await interaction.response.defer()
+    
     subs = get_guild_subscriptions(str(interaction.guild_id))
+    
     if not subs:
-        await interaction.response.send_message("📋 ยังไม่ได้ติดตามอนิเมะเรื่องใด ใช้ `/subscribe` เพื่อเริ่มต้น")
+        await interaction.followup.send("📋 ยังไม่ได้ติดตามอนิเมะเรื่องใด ใช้ `/subscribe` เพื่อเริ่มต้น")
         return
 
     embed = discord.Embed(
         title="📺 อนิเมะที่ติดตามอยู่",
         color=discord.Color.blue()
     )
-    for sub in subs:
+
+    for sub in subs:        
         ep = sub.get("last_episode", "?")
+        offset = get_offset(str(interaction.guild_id), sub["anime_id"])
+
+        # ใช้ get_anime_by_id แทน — มี nextAiringEpisode อยู่แล้ว
+        anime_info = await get_anime_by_id(sub["anime_id"])
+        next_ep = anime_info.get("nextAiringEpisode") if anime_info else None
+
+        if next_ep:
+            airing_time = datetime.datetime.fromtimestamp(next_ep["airingAt"] + offset * 60)
+            day_str = airing_time.strftime("%d/%m %H:%M")
+            offset_str = f" (+{offset}น.)" if offset else ""
+            next_str = f"ตอน {next_ep['episode']} — {day_str}{offset_str}"
+        else:
+            next_str = "ไม่ระบุ"
+
         embed.add_field(
             name=sub["anime_title"],
-            value=f"ID: `{sub['anime_id']}` | ตอนล่าสุด: {ep} | Channel: <#{sub['channel_id']}>",
+            value=(
+                f"ID: `{sub['anime_id']}` | ตอนล่าสุด: {ep}\n"
+                f"⏭ ตอนถัดไป: {next_str}\n"
+                f"📢 Channel: <#{sub['channel_id']}>"
+            ),
             inline=False
         )
-    await interaction.response.send_message(embed=embed)
+
+    await interaction.followup.send(embed=embed)
 
 @bot.tree.command(name="onair", description="ดูอนิเมะที่กำลังออกอากาศอยู่ตอนนี้")
-@app_commands.describe(limit="จำนวนที่ต้องการแสดง (สูงสุด 30, default 20)")
-async def cmd_onair(interaction: discord.Interaction, limit: int = 20):
+@app_commands.describe(limit="จำนวนที่ต้องการแสดง (สูงสุด 25, default 10)")
+async def cmd_onair(interaction: discord.Interaction, limit: int = 10):
     await interaction.response.defer()
 
-    from anime_checker import get_seasonal_anime
-    results = await get_seasonal_anime(min(limit, 30))
+    results = await get_seasonal_anime(min(limit, 25))
 
     if not results:
         await interaction.followup.send("❌ ดึงข้อมูลไม่ได้ในตอนนี้ ลองใหม่อีกครั้งนะครับ")
@@ -130,15 +198,24 @@ async def cmd_onair(interaction: discord.Interaction, limit: int = 20):
     )
 
     for anime in results[:limit]:
-        title = anime.get("title", "Unknown")
-        anime_id = anime.get("mal_id", "?")
-        score = anime.get("score") or "ยังไม่มีคะแนน"
+        title = anime.get("title", {}).get("romaji", "Unknown")
+        anime_id = anime.get("id", "?")
+        score = anime.get("averageScore") or "?"
         ep_count = anime.get("episodes") or "?"
-        day = anime.get("broadcast", {}).get("day") or "ไม่ระบุ"
+        next_ep = anime.get("nextAiringEpisode")
+        
+        if next_ep:
+            offset = get_offset(str(interaction.guild_id), anime_id)
+            airing_time = datetime.datetime.fromtimestamp(next_ep["airingAt"] + offset * 60)
+            day_str = airing_time.strftime("%d/%m %H:%M")
+            offset_str = f" (+{offset}น.)" if offset else ""
+            next_str = f"ตอน {next_ep['episode']} — {day_str}{offset_str}"
+        else:
+            next_str = "ไม่ระบุ"
 
         embed.add_field(
             name=title,
-            value=f"⭐ {score} | 📅 ออกทุก {day} | 🎬 {ep_count} ตอน | ID: `{anime_id}`",
+            value=f"⭐ {score} | 🎬 {ep_count} ตอน | ⏭ {next_str} | ID: `{anime_id}`",
             inline=False
         )
 
@@ -150,20 +227,19 @@ async def cmd_onair(interaction: discord.Interaction, limit: int = 20):
 async def cmd_episodes(interaction: discord.Interaction, anime_id: int):
     await interaction.response.defer()
 
-    from anime_checker import get_episode_list
     anime_info, episodes = await get_episode_list(anime_id)
 
     if anime_info is None:
         await interaction.followup.send("❌ ไม่พบอนิเมะ ID นี้")
         return
 
-    title = anime_info.get("title", "Unknown")
+    title = anime_info.get("title", {}).get("romaji", "Unknown")
     total_ep = anime_info.get("episodes") or "ยังไม่ระบุ"
     status = anime_info.get("status", "")
     aired_count = len(episodes)
-    image = anime_info.get("images", {}).get("jpg", {}).get("large_image_url")
-    url = anime_info.get("url")
-
+    image = anime_info.get("coverImage", {}).get("large")
+    url = anime_info.get("siteUrl")
+    
     embed = discord.Embed(
         title=f"🎬 {title}",
         url=url,
@@ -179,15 +255,33 @@ async def cmd_episodes(interaction: discord.Interaction, anime_id: int):
 
     # แสดง 5 ตอนล่าสุด
     if episodes:
-        recent = episodes[-5:]
+        # เรียงจากมากไปน้อย แล้วเอา 5 ตอนล่าสุด
+        sorted_eps = sorted(episodes, key=lambda e: e["episode"], reverse=True)
         recent_text = "\n".join(
-            f"ตอน {ep.get('mal_id')} — {ep.get('title') or 'ไม่มีชื่อ'}"
-            for ep in reversed(recent)
+            f"ตอน {ep['episode']}"
+            for ep in sorted_eps[:5]
         )
         embed.add_field(name="5 ตอนล่าสุด", value=recent_text, inline=False)
 
     embed.set_footer(text=f"Anime ID: {anime_id} | ใช้ /subscribe เพื่อติดตาม")
     await interaction.followup.send(embed=embed)
+
+@bot.tree.command(name="setoffset", description="ตั้งเวลาชดเชยสำหรับอนิเมะที่ปล่อยช้ากว่า AniList")
+@app_commands.describe(
+    anime_id="Anime ID จาก /list",
+    offset_minutes="จำนวนนาทีที่ช้ากว่า AniList เช่น 30 หรือ 60 นาที"
+)
+async def cmd_setoffset(interaction: discord.Interaction, anime_id: int, offset_minutes: int):
+    success = set_offset(str(interaction.guild_id), anime_id, offset_minutes)
+    
+    if success:
+        await interaction.response.send_message(
+            f"✅ ตั้งค่าเวลาชดเชยสำหรับ ID `{anime_id}` เป็น **+{offset_minutes} นาที** แล้วครับ"
+        )
+    else:
+        await interaction.response.send_message(
+            "❌ ไม่พบอนิเมะ ID นี้ในรายการติดตาม ต้อง `/subscribe` ก่อนนะครับ"
+        )
 
 # ==================== SCHEDULER ====================
 
@@ -216,12 +310,14 @@ async def check_new_episodes():
                     continue
 
                 anime_info = await get_latest_episode(anime_id)
+                
                 embed = discord.Embed(
                     title=f"🎬 {sub['anime_title']} — ตอนที่ {ep_num} ออกแล้ว!",
                     description=ep_title or "ตอนใหม่เพิ่งอัปโหลดแล้ว!",
                     color=discord.Color.orange(),
                     url=anime_info.get("url") if anime_info else None
                 )
+                
                 if anime_info and anime_info.get("image"):
                     embed.set_thumbnail(url=anime_info["image"])
                 if anime_info and anime_info.get("score"):
@@ -237,7 +333,6 @@ async def check_new_episodes():
         except Exception as e:
             print(f"❌ Error ตรวจสอบ {sub.get('anime_title')}: {e}")
 
-
 # ==================== EVENTS ====================
 
 @bot.event
@@ -250,9 +345,8 @@ async def on_ready():
         print(f"❌ Sync error: {e}")
 
     # เริ่ม scheduler
-    scheduler.add_job(check_new_episodes, "interval", hours=1, id="anime_check")
+    scheduler.add_job(check_new_episodes, "interval", minutes=10, id="anime_check")
     scheduler.start()
-    print("⏰ Scheduler เริ่มทำงาน (ตรวจทุก 1 ชั่วโมง)")
-
+    print("⏰ Scheduler เริ่มทำงาน (ตรวจทุก 10 นาที)")
 
 bot.run(os.getenv("DISCORD_TOKEN"))

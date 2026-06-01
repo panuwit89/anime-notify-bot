@@ -7,6 +7,7 @@ import os
 from dotenv import load_dotenv
 import asyncio
 import datetime
+from keep_alive import keep_alive
 
 from database import (
     subscribe, unsubscribe, get_subscriptions,
@@ -350,5 +351,12 @@ async def on_ready():
     scheduler.start()
     print("⏰ Scheduler เริ่มทำงาน (ตรวจทุก 30 นาที)")
 
+@bot.event
+async def on_resumed():
+    print("Bot resumed — restarting scheduler...")
+    if not scheduler.running:
+        scheduler.start()
+
 if __name__ == "__main__":
+    keep_alive()
     bot.run(os.getenv("DISCORD_TOKEN"))

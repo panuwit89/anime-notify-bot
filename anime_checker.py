@@ -70,7 +70,7 @@ async def get_seasonal_anime(limit: int = 20):
         return []
     return data["Page"]["media"]
 
-async def get_airing_episodes(anime_id: int):
+async def get_airing_episodes(anime_id: int, offset_minutes: int = 0):
     now = int(time.time())
 
     gql = """
@@ -88,7 +88,11 @@ async def get_airing_episodes(anime_id: int):
     nodes = data["Media"]["airingSchedule"]["nodes"]
     
     # กรองตอนที่ออกจริงๆ แล้วเท่านั้น
-    aired = [n for n in nodes if n["airingAt"] <= now]
+    aired = [
+        n for n in nodes
+        if n["airingAt"] + (offset_minutes * 60) <= now
+    ]
+    
     if not aired:
         return None, None
     

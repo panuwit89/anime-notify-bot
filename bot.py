@@ -7,7 +7,6 @@ import os
 from dotenv import load_dotenv
 import asyncio
 import datetime
-from keep_alive import keep_alive
 
 from database import (
     subscribe, unsubscribe, get_subscriptions,
@@ -287,7 +286,7 @@ async def cmd_setoffset(interaction: discord.Interaction, anime_id: int, offset_
 # ==================== SCHEDULER ====================
 
 async def check_new_episodes():
-    """ตรวจสอบอนิเมะทุกชั่วโมง"""
+    """ตรวจสอบอนิเมะทุกครึ่งชั่วโมง"""
     print("🔍 กำลังตรวจสอบตอนใหม่...")
     subs = get_subscriptions()
 
@@ -298,7 +297,8 @@ async def check_new_episodes():
             channel_id = sub["channel_id"]
             last_ep = sub.get("last_episode")
 
-            ep_num, ep_title = await get_airing_episodes(anime_id)
+            offset = sub.get("offset_minutes", 0)
+            ep_num, ep_title = await get_airing_episodes(anime_id, offset)
             if not ep_num:
                 continue
 
@@ -346,10 +346,9 @@ async def on_ready():
         print(f"❌ Sync error: {e}")
 
     # เริ่ม scheduler
-    scheduler.add_job(check_new_episodes, "interval", minutes=10, id="anime_check")
+    scheduler.add_job(check_new_episodes, "interval", minutes=30, id="anime_check")
     scheduler.start()
-    print("⏰ Scheduler เริ่มทำงาน (ตรวจทุก 10 นาที)")
+    print("⏰ Scheduler เริ่มทำงาน (ตรวจทุก 30 นาที)")
 
 if __name__ == "__main__":
-    keep_alive()
     bot.run(os.getenv("DISCORD_TOKEN"))

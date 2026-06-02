@@ -14,7 +14,7 @@ from database import (
     update_last_episode, get_guild_subscriptions,
     set_offset, get_offset
 )
-from anime_checker import search_anime, get_latest_episode, get_airing_episodes, get_seasonal_anime, get_episode_list, get_anime_by_id
+from anime_checker import search_anime, get_latest_episode, get_airing_episodes, get_seasonal_anime, get_episode_list, get_anime_by_id, get_next_airing_episode
 
 load_dotenv()
 
@@ -155,9 +155,7 @@ async def cmd_list(interaction: discord.Interaction):
         ep = sub.get("last_episode", "?")
         offset = get_offset(str(interaction.guild_id), sub["anime_id"])
 
-        # ใช้ get_anime_by_id แทน — มี nextAiringEpisode อยู่แล้ว
-        anime_info = await get_anime_by_id(sub["anime_id"])
-        next_ep = anime_info.get("nextAiringEpisode") if anime_info else None
+        next_ep = await get_next_airing_episode(sub["anime_id"])
 
         if next_ep:
             airing_time = datetime.datetime.fromtimestamp(next_ep["airingAt"] + offset * 60)

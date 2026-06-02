@@ -21,6 +21,14 @@ load_dotenv()
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 scheduler = AsyncIOScheduler()
+BANGKOK_TZ = datetime.timezone(datetime.timedelta(hours=7))
+
+def format_airing_time(airing_at: int, offset_minutes: int = 0) -> str:
+    airing_time = datetime.datetime.fromtimestamp(
+        airing_at + offset_minutes * 60,
+        tz=BANGKOK_TZ
+    )
+    return airing_time.strftime("%d/%m %H:%M")
 
 # ==================== COMMANDS ====================
 
@@ -158,8 +166,7 @@ async def cmd_list(interaction: discord.Interaction):
         next_ep = await get_next_airing_episode(sub["anime_id"])
 
         if next_ep:
-            airing_time = datetime.datetime.fromtimestamp(next_ep["airingAt"] + offset * 60)
-            day_str = airing_time.strftime("%d/%m %H:%M")
+            day_str = format_airing_time(next_ep["airingAt"], offset)
             offset_str = f" (+{offset}น.)" if offset else ""
             next_str = f"ตอน {next_ep['episode']} — {day_str}{offset_str}"
         else:
@@ -205,8 +212,7 @@ async def cmd_onair(interaction: discord.Interaction, limit: int = 10):
         
         if next_ep:
             offset = get_offset(str(interaction.guild_id), anime_id)
-            airing_time = datetime.datetime.fromtimestamp(next_ep["airingAt"] + offset * 60)
-            day_str = airing_time.strftime("%d/%m %H:%M")
+            day_str = format_airing_time(next_ep["airingAt"], offset)
             offset_str = f" (+{offset}น.)" if offset else ""
             next_str = f"ตอน {next_ep['episode']} — {day_str}{offset_str}"
         else:

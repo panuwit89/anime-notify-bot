@@ -50,6 +50,35 @@ async def get_anime_by_id(anime_id: int):
         return None
     return data["Media"]
 
+async def get_next_airing_episode(anime_id: int):
+    now = int(time.time())
+
+    gql = """
+    query ($id: Int) {
+        Media(id: $id, type: ANIME) {
+            nextAiringEpisode { episode airingAt }
+            airingSchedule(notYetAired: true, perPage: 10) {
+                nodes { episode airingAt }
+            }
+        }
+    }
+    """
+    data = await query_anilist(gql, {"id": anime_id})
+    if not data or not data.get("Media"):
+        return None
+
+    media = data["Media"]
+    next_ep = media.get("nextAiringEpisode")
+    if next_ep:
+        return next_ep
+
+    nodes = media.get("airingSchedule", {}).get("nodes", [])
+    future = [n for n in nodes if n["airingAt"] > now]
+    if not future:
+        return None
+
+    return min(future, key=lambda n: n["airingAt"])
+
 async def get_seasonal_anime(limit: int = 20):
     gql = """
     query ($perPage: Int) {

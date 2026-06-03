@@ -69,11 +69,14 @@ async def get_next_airing_episode(anime_id: int):
 
     media = data["Media"]
     next_ep = media.get("nextAiringEpisode")
-    if next_ep:
+    if next_ep and next_ep.get("episode") and next_ep.get("airingAt"):
         return next_ep
 
     nodes = media.get("airingSchedule", {}).get("nodes", [])
-    future = [n for n in nodes if n["airingAt"] > now]
+    future = [
+        n for n in nodes
+        if n.get("episode") and n.get("airingAt") and n["airingAt"] > now
+    ]
     if not future:
         return None
 
@@ -119,7 +122,8 @@ async def get_airing_episodes(anime_id: int, offset_minutes: int = 0):
     # กรองตอนที่ออกจริงๆ แล้วเท่านั้น
     aired = [
         n for n in nodes
-        if n["airingAt"] + (offset_minutes * 60) <= now
+        if n.get("episode") and n.get("airingAt")
+        and n["airingAt"] + (offset_minutes * 60) <= now
     ]
     
     if not aired:
@@ -157,7 +161,10 @@ async def get_episode_list(anime_id: int):
     all_nodes = media.get("airingSchedule", {}).get("nodes", [])
     
     # กรองเฉพาะตอนที่ airingAt น้อยกว่าเวลาปัจจุบัน = ออกไปแล้วจริงๆ
-    aired = [n for n in all_nodes if n["airingAt"] <= now]
+    aired = [
+        n for n in all_nodes
+        if n.get("episode") and n.get("airingAt") and n["airingAt"] <= now
+    ]
     
     return media, aired
 
@@ -186,7 +193,10 @@ async def get_latest_episode(anime_id: int):
     media = data["Media"]
 
     all_nodes = media.get("airingSchedule", {}).get("nodes", [])
-    aired = [n for n in all_nodes if n["airingAt"] <= now]
+    aired = [
+        n for n in all_nodes
+        if n.get("episode") and n.get("airingAt") and n["airingAt"] <= now
+    ]
     latest_ep = max(aired, key=lambda n: n["episode"])["episode"] if aired else None
 
     return {

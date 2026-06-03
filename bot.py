@@ -162,6 +162,11 @@ async def cmd_list(interaction: discord.Interaction):
     for sub in subs:        
         ep = sub.get("last_episode", "?")
         offset = get_offset(str(interaction.guild_id), sub["anime_id"])
+        latest_ep, _ = await get_airing_episodes(sub["anime_id"], offset)
+
+        if latest_ep and (ep == "?" or ep is None or latest_ep > ep):
+            update_last_episode(str(interaction.guild_id), sub["anime_id"], latest_ep)
+            ep = latest_ep
 
         next_ep = await get_next_airing_episode(sub["anime_id"])
 

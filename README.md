@@ -1,148 +1,176 @@
-# 🎬 Anime Notify Bot
+# Anime Notify Bot
 
-Discord Bot สำหรับแจ้งเตือนเมื่ออนิเมะมีตอนใหม่ออกอากาศ ดึงข้อมูลจาก [AniList](https://anilist.co/) ผ่าน GraphQL API
+A Python Discord bot that watches airing anime and posts episode notifications to your server. It uses the AniList GraphQL API for anime data, MongoDB for subscriptions, and Discord slash commands for setup and day-to-day use.
 
----
+## Features
 
-## ✨ ฟีเจอร์
+- Subscribe a Discord channel to anime episode notifications.
+- Search AniList by title or subscribe directly with an AniList anime ID.
+- Automatically checks for new episodes every 30 minutes.
+- Shows currently airing TV anime with scores, episode counts, next episode times, and AniList IDs.
+- Lists subscribed anime per server, including the next scheduled episode.
+- Tracks the latest aired episode to avoid duplicate alerts.
+- Supports per-anime release offsets when an episode appears later than AniList's airing time.
+- Runs a small HTTP keep-alive server for hosted environments such as Render.
 
-- แจ้งเตือนอัตโนมัติทุกครั้งที่มีตอนใหม่ออก (ตรวจสอบทุก 10 นาที)
-- ค้นหาและติดตามอนิเมะด้วย Slash Commands
-- ดูรายการอนิเมะที่กำลัง On Air อยู่ตอนนี้พร้อมเวลาตอนถัดไป
-- ตรวจสอบว่าแต่ละเรื่องออกมากี่ตอนแล้ว
-- ตั้งค่าเวลาชดเชยสำหรับอนิเมะที่ปล่อยช้ากว่า AniList
-- แจ้งเตือนไปยัง channel ที่กำหนดพร้อม embed สวยงาม
+## Tech Stack
 
----
+- Python
+- discord.py
+- AniList GraphQL API
+- MongoDB / PyMongo
+- APScheduler
+- aiohttp
+- python-dotenv
 
-## 📋 สิ่งที่ต้องมีก่อนติดตั้ง
+## Requirements
 
-- Python 3.10 ขึ้นไป
-- Discord Bot Token (ดูวิธีสร้างด้านล่าง)
-- เชื่อมต่ออินเทอร์เน็ต (สำหรับดึงข้อมูลจาก AniList API)
+- Python 3.10 or newer
+- A Discord bot token
+- A MongoDB connection string
+- Internet access for Discord, MongoDB, and AniList API calls
 
----
+## Setup
 
-## 🚀 วิธีติดตั้ง
-
-### 1. Clone โปรเจกต์
+### 1. Clone the project
 
 ```bash
 git clone https://github.com/yourusername/anime-notify-bot.git
 cd anime-notify-bot
 ```
 
-### 2. ติดตั้ง dependencies
+### 2. Create a virtual environment
 
 ```bash
-pip install discord.py aiohttp apscheduler python-dotenv
+python -m venv .venv
 ```
 
-### 3. สร้าง Discord Bot
-
-1. ไปที่ [Discord Developer Portal](https://discord.com/developers/applications)
-2. กด **New Application** แล้วตั้งชื่อ Bot
-3. ไปที่แท็บ **Bot** → กด **Reset Token** → คัดลอก Token ไว้
-4. เปิด **Message Content Intent** และ **Server Members Intent**
-5. ไปที่ **OAuth2 → URL Generator**
-   - เลือก Scope: `bot` และ `applications.commands`
-   - เลือก Permission: `Send Messages`, `Embed Links`, `Mention Everyone`
-6. เปิด URL ที่ได้เพื่อเชิญ Bot เข้า Server
-
-### 4. ตั้งค่าไฟล์ `.env`
-
-คัดลอกไฟล์ตัวอย่าง แล้วใส่ Token ที่ได้มา:
+On Windows:
 
 ```bash
-cp .env.example .env
+.venv\Scripts\activate
 ```
 
-แก้ไขไฟล์ `.env`:
+On macOS or Linux:
+
+```bash
+source .venv/bin/activate
+```
+
+### 3. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Create a Discord bot
+
+1. Open the [Discord Developer Portal](https://discord.com/developers/applications).
+2. Create a new application.
+3. Open the **Bot** tab and create or reset the bot token.
+4. Copy the token.
+5. Open **OAuth2 > URL Generator**.
+6. Select these scopes:
+   - `bot`
+   - `applications.commands`
+7. Select permissions such as:
+   - `Send Messages`
+   - `Embed Links`
+   - `Mention Everyone`
+8. Open the generated URL and invite the bot to your server.
+
+## Environment Variables
+
+Create a `.env` file in the project root:
 
 ```env
-DISCORD_TOKEN=ใส่_token_ของคุณตรงนี้
+DISCORD_TOKEN=your_discord_bot_token_here
+MONGO_URI=your_mongodb_connection_string_here
 ```
 
-### 5. รัน Bot
+Important: the code currently reads `MONGO_URI`, so use that exact name in your environment.
+
+## Run the Bot
 
 ```bash
 python bot.py
 ```
 
-ถ้าสำเร็จจะเห็นข้อความใน terminal ประมาณนี้:
+When the bot starts successfully, it syncs slash commands and starts the episode checker. The scheduler checks subscriptions every 30 minutes.
 
+The app also starts a keep-alive web server on `PORT` if that environment variable is set, or `8080` by default.
+
+## Slash Commands
+
+| Command | Description |
+| --- | --- |
+| `/subscribe query:<title>` | Search AniList and choose an anime from a dropdown. Notifications are sent to the current channel. |
+| `/subscribe anime_id:<id>` | Subscribe directly by AniList anime ID. |
+| `/unsubscribe anime_id:<id>` | Remove an anime subscription from the current server. |
+| `/list` | Show all anime subscriptions for the current server. |
+| `/onair limit:<number>` | Show currently airing anime. Defaults to 10 and caps at 25. |
+| `/episodes anime_id:<id>` | Show episode progress for an anime. |
+| `/setoffset anime_id:<id> offset_minutes:<minutes>` | Delay notification checks for an anime by a set number of minutes. |
+
+## Usage Examples
+
+Subscribe by search:
+
+```text
+/subscribe query:Demon Slayer
 ```
-✅ Bot เริ่มทำงาน: AnimeName#1234
-📡 Sync 6 commands แล้ว
-⏰ Scheduler เริ่มทำงาน (ตรวจทุก 10 นาที)
-```
 
----
+Subscribe directly with an AniList ID:
 
-## 📁 โครงสร้างโปรเจกต์
-
-```
-anime-notify-bot/
-├── bot.py               # ไฟล์หลัก ตัว Bot และ Commands
-├── anime_checker.py     # ดึงข้อมูลจาก AniList GraphQL API
-├── database.py          # จัดการข้อมูล subscription (JSON file)
-├── subscriptions.json   # ฐานข้อมูล (สร้างอัตโนมัติเมื่อรัน)
-├── .env                 # เก็บ Token (ห้าม push ขึ้น GitHub)
-├── .env.example         # ตัวอย่างไฟล์ .env
-├── .gitignore
-└── README.md
-```
-
----
-
-## 🎮 คำสั่งที่ใช้ได้
-
-| คำสั่ง | คำอธิบาย |
-|--------|----------|
-| `/subscribe <ชื่อ>` | ค้นหาและติดตามอนิเมะ bot จะแจ้งเตือนใน channel นี้ |
-| `/subscribe anime_id:<id>` | ติดตามอนิเมะจาก AniList ID โดยตรง |
-| `/unsubscribe <id>` | ยกเลิกการติดตามอนิเมะ (ดู ID ได้จาก `/list`) |
-| `/list` | ดูรายการอนิเมะที่ติดตามอยู่ทั้งหมดพร้อมเวลาตอนถัดไป |
-| `/onair` | ดูอนิเมะที่กำลัง On Air อยู่ตอนนี้ (default 10 เรื่อง สูงสุด 25) |
-| `/episodes <id>` | ดูว่าอนิเมะเรื่องนั้นออกมากี่ตอนแล้ว |
-| `/setoffset <id> <นาที>` | ตั้งเวลาชดเชยสำหรับอนิเมะที่ปล่อยช้ากว่า AniList |
-
-### ตัวอย่างการใช้งาน
-
-```
-# ติดตามอนิเมะโดยค้นหาชื่อ
-/subscribe Demon Slayer
-
-# ติดตามจาก ID โดยตรง
+```text
 /subscribe anime_id:52991
-
-# ดูอนิเมะที่กำลังออกอากาศ แล้วเอา ID มาใช้
-/onair
-/episodes 52991
-
-# ตั้งค่าชดเชยเวลา 30 นาที (เช่น ถ้า bot แจ้งเตือนเร็วเกินไป)
-/setoffset 52991 30
-
-# ยกเลิกติดตาม
-/unsubscribe 52991
 ```
 
-> 💡 **Tips การค้นหา:** ใช้ชื่อภาษาอังกฤษจะแม่นกว่า และไม่จำเป็นต้องพิมพ์ชื่อเต็ม เช่น `demon` แทน `Demon Slayer` ก็ได้
+See airing anime and use an ID from the result:
 
----
+```text
+/onair limit:10
+/episodes anime_id:52991
+```
 
-## ⚠️ หมายเหตุสำคัญ
+Delay notifications by 30 minutes for a specific anime:
 
-- **Bot Token** คือกุญแจควบคุม Bot ห้ามแชร์ให้ใคร และห้าม push ไฟล์ `.env` ขึ้น GitHub เด็ดขาด
-- ถ้า Token หลุด ให้ไป Reset Token ที่ Discord Developer Portal ทันที
-- Bot จะตรวจสอบตอนใหม่ทุก 10 นาที อาจมีดีเลย์จาก AniList อัปเดตข้อมูลช้า
-- ข้อมูลการติดตามทั้งหมดเก็บในไฟล์ `subscriptions.json` ในเครื่อง ควร backup ไว้ด้วย
+```text
+/setoffset anime_id:52991 offset_minutes:30
+```
 
----
+Unsubscribe:
 
-## 🛠️ Tech Stack
+```text
+/unsubscribe anime_id:52991
+```
 
-- [discord.py](https://discordpy.readthedocs.io/) — Discord API wrapper
-- [AniList GraphQL API](https://anilist.gitbook.io/anilist-apiv2-docs/) — ข้อมูลอนิเมะ
-- [APScheduler](https://apscheduler.readthedocs.io/) — จัดการ cron job
-- [aiohttp](https://docs.aiohttp.org/) — HTTP client แบบ async
+## Project Structure
+
+```text
+.
+|-- bot.py              # Discord bot, slash commands, scheduler, notifications
+|-- anime_checker.py    # AniList GraphQL API client and anime lookup helpers
+|-- database.py         # MongoDB subscription storage
+|-- keep_alive.py       # Small HTTP server for hosted deployments
+|-- requirements.txt    # Python dependencies
+|-- .env.example        # Example environment variables
+|-- .gitignore
+`-- README.md
+```
+
+## Data Storage
+
+Subscriptions are stored in MongoDB in:
+
+- Database: `anime_bot_db`
+- Collection: `subscriptions`
+
+Each subscription is scoped by Discord guild ID and AniList anime ID. The bot stores the Discord channel ID, anime title, latest episode seen, and offset minutes.
+
+## Deployment Notes
+
+- Keep `.env` private. Never commit your Discord token or MongoDB URI.
+- If a token leaks, reset it immediately in the Discord Developer Portal.
+- Hosted platforms should provide `DISCORD_TOKEN`, `MONGO_URI`, and optionally `PORT` as environment variables.
+- The bot relies on AniList airing schedule data, so notifications may depend on how quickly AniList updates a show.

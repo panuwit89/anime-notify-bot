@@ -162,6 +162,11 @@ async def cmd_list(interaction: discord.Interaction):
     for sub in subs:        
         ep = sub.get("last_episode", "?")
         offset = get_offset(str(interaction.guild_id), sub["anime_id"])
+        latest_ep, _ = await get_airing_episodes(sub["anime_id"], offset)
+
+        if latest_ep and (ep == "?" or ep is None or latest_ep > ep):
+            update_last_episode(str(interaction.guild_id), sub["anime_id"], latest_ep)
+            ep = latest_ep
 
         next_ep = await get_next_airing_episode(sub["anime_id"])
 
@@ -351,9 +356,9 @@ async def on_ready():
         print(f"❌ Sync error: {e}")
 
     # เริ่ม scheduler
-    scheduler.add_job(check_new_episodes, "interval", minutes=30, id="anime_check")
+    scheduler.add_job(check_new_episodes, "interval", minutes=10, id="anime_check")
     scheduler.start()
-    print("⏰ Scheduler เริ่มทำงาน (ตรวจทุก 30 นาที)")
+    print("⏰ Scheduler เริ่มทำงาน (ตรวจทุก 10 นาที)")
 
 @bot.event
 async def on_resumed():

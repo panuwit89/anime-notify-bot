@@ -356,9 +356,9 @@ async def on_ready():
         print(f"❌ Sync error: {e}")
 
     # เริ่ม scheduler
-    scheduler.add_job(check_new_episodes, "interval", minutes=30, id="anime_check")
+    scheduler.add_job(check_new_episodes, "interval", minutes=10, id="anime_check")
     scheduler.start()
-    print("⏰ Scheduler เริ่มทำงาน (ตรวจทุก 30 นาที)")
+    print("⏰ Scheduler เริ่มทำงาน (ตรวจทุก 10 นาที)")
 
 @bot.event
 async def on_resumed():

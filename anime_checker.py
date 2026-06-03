@@ -78,7 +78,33 @@ async def get_next_airing_episode(anime_id: int):
         if n.get("episode") and n.get("airingAt") and n["airingAt"] > now
     ]
     if not future:
-        return None
+        gql = """
+        query ($id: Int, $now: Int) {
+            Page(perPage: 1) {
+                airingSchedules(
+                    mediaId: $id
+                    airingAt_greater: $now
+                    sort: TIME
+                ) {
+                    episode
+                    airingAt
+                }
+            }
+        }
+        """
+        data = await query_anilist(gql, {"id": anime_id, "now": now})
+        if not data:
+            return None
+
+        schedules = data.get("Page", {}).get("airingSchedules", [])
+        valid_schedules = [
+            s for s in schedules
+            if s.get("episode") and s.get("airingAt")
+        ]
+        if not valid_schedules:
+            return None
+
+        return valid_schedules[0]
 
     return min(future, key=lambda n: n["airingAt"])
 

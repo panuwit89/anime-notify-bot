@@ -22,6 +22,10 @@ intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 scheduler = AsyncIOScheduler()
 BANGKOK_TZ = datetime.timezone(datetime.timedelta(hours=7))
+last_scheduler_started_at = None
+last_episode_check_started_at = None
+last_episode_check_finished_at = None
+last_episode_check_error = None
 
 def format_airing_time(airing_at: int, offset_minutes: int = 0) -> str:
     airing_time = datetime.datetime.fromtimestamp(
@@ -295,7 +299,52 @@ async def cmd_setoffset(interaction: discord.Interaction, anime_id: int, offset_
 
 # ==================== SCHEDULER ====================
 
+def utc_now():
+    return datetime.datetime.now(datetime.timezone.utc)
+
+def ensure_scheduler_running():
+    global last_scheduler_started_at
+
+    scheduler.add_job(
+        check_new_episodes,
+        "interval",
+        minutes=10,
+        id="anime_check",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+
+    if not scheduler.running:
+        scheduler.start()
+        last_scheduler_started_at = utc_now()
+        print("Scheduler started")
+    else:
+        print("Scheduler already running")
+
+def get_health_status():
+    job = scheduler.get_job("anime_check")
+    bot_ready = bot.is_ready()
+    scheduler_ready = scheduler.running and job is not None
+
+    return {
+        "healthy": bot_ready and scheduler_ready,
+        "bot_ready": bot_ready,
+        "latency_ms": round(bot.latency * 1000, 2) if bot.latency else None,
+        "scheduler_running": scheduler.running,
+        "anime_check_job_exists": job is not None,
+        "next_anime_check_at": job.next_run_time.isoformat() if job and job.next_run_time else None,
+        "last_scheduler_started_at": last_scheduler_started_at.isoformat() if last_scheduler_started_at else None,
+        "last_episode_check_started_at": last_episode_check_started_at.isoformat() if last_episode_check_started_at else None,
+        "last_episode_check_finished_at": last_episode_check_finished_at.isoformat() if last_episode_check_finished_at else None,
+        "last_episode_check_error": last_episode_check_error,
+    }
+
 async def check_new_episodes():
+    global last_episode_check_started_at, last_episode_check_finished_at, last_episode_check_error
+
+    last_episode_check_started_at = utc_now()
+    last_episode_check_error = None
     """ตรวจสอบอนิเมะทุกครึ่งชั่วโมง"""
     print("🔍 กำลังตรวจสอบตอนใหม่...")
     subs = get_subscriptions()
@@ -344,6 +393,8 @@ async def check_new_episodes():
         except Exception as e:
             print(f"❌ Error ตรวจสอบ {sub.get('anime_title')}: {e}")
 
+    last_episode_check_finished_at = utc_now()
+
 # ==================== EVENTS ====================
 
 @bot.event
@@ -356,16 +407,17 @@ async def on_ready():
         print(f"❌ Sync error: {e}")
 
     # เริ่ม scheduler
-    scheduler.add_job(check_new_episodes, "interval", minutes=10, id="anime_check")
-    scheduler.start()
+    ensure_scheduler_running()
     print("⏰ Scheduler เริ่มทำงาน (ตรวจทุก 10 นาที)")
 
 @bot.event
 async def on_resumed():
+    ensure_scheduler_running()
+    return
     print("Bot resumed — restarting scheduler...")
     if not scheduler.running:
         scheduler.start()
 
 if __name__ == "__main__":
-    keep_alive()
+    keep_alive(get_health_status)
     bot.run(os.getenv("DISCORD_TOKEN"))
